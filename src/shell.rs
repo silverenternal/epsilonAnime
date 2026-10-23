@@ -117,7 +117,9 @@ impl ShellPane {
         let mut command = CommandBuilder::new(shell);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
-        if let Ok(cwd) = std::env::var("HAPPYBIRTHDAY_SHELL_CWD") {
+        if let Ok(cwd) = std::env::var("EPSILON_ANIME_SHELL_CWD")
+            .or_else(|_| std::env::var("HAPPYBIRTHDAY_SHELL_CWD"))
+        {
             command.cwd(cwd);
         }
         let child = pair

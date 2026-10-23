@@ -133,7 +133,7 @@ impl App {
         let mut meta = Meta::default();
         let mut lyric = LyricState::load();
         if demo {
-            meta.title = "happybirthday".into();
+            meta.title = "epsilonAnime".into();
             meta.artist = "terminal math lab".into();
             meta.duration_ms = 180_000;
             lyric.set(
@@ -306,9 +306,6 @@ impl App {
                 title,
                 artist,
                 duration_ms,
-                cover_path: _,
-                cover_cols: _,
-                cover_rows: _,
                 ..
             } => {
                 self.status.clear();

@@ -3,8 +3,8 @@ name = "anim_macro"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/silverenternal/happybirthday"
-description = "Compile-time math kernel DSL for happybirthday animations"
+repository = "https://github.com/silverenternal/epsilonAnime"
+description = "Compile-time math kernel DSL for epsilonAnime visualizations"
 
 [lib]
 proc-macro = true

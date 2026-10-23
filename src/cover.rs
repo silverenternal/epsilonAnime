@@ -36,8 +36,9 @@ impl Cover {
             bytes.len(),
             width * height * 3
         );
-        let pixels = bytes
-            .chunks_exact(3)
+        let (channels, _) = bytes.as_chunks::<3>();
+        let pixels = channels
+            .iter()
             .map(|c| Rgb::new(c[0], c[1], c[2]))
             .collect();
         let mut cover = Self {
@@ -120,7 +121,7 @@ impl Cover {
         let bytes =
             fs::read(Path::new(path)).with_context(|| format!("read cover particles {path}"))?;
         anyhow::ensure!(
-            bytes.len() >= 16 && &bytes[..4] == b"HBPC",
+            bytes.len() >= 16 && matches!(&bytes[..4], b"EAPC" | b"HBPC"),
             "bad particle file"
         );
         let count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;

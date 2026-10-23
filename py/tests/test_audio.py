@@ -132,7 +132,7 @@ class AudioTests(unittest.TestCase):
     def test_default_output_device_is_optional(self):
         self.assertEqual(playback_device_id(), (None, ""))
 
-    @patch.dict("os.environ", {"HAPPYBIRTHDAY_AUDIO_BACKEND": "null"})
+    @patch.dict("os.environ", {"EPSILON_ANIME_AUDIO_BACKEND": "null"})
     def test_null_backend_is_available_for_headless_playback_checks(self):
         self.assertEqual(playback_backends(), [miniaudio.Backend.NULL])
 

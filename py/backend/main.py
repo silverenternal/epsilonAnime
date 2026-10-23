@@ -29,7 +29,7 @@ def watch_parent_process() -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="happybirthday NetEase backend")
+    parser = argparse.ArgumentParser(description="epsilonAnime NetEase backend")
     parser.add_argument("url", nargs="?", help="NetEase song URL")
     parser.add_argument("--level", default="standard", choices=["standard", "exhigh", "lossless", "hires"])
     parser.add_argument("--cookie", default=None, help="MUSIC_U cookie for VIP tracks")

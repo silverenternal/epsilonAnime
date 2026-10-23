@@ -1,6 +1,6 @@
-# happybirthday
+# epsilonAnime
 
-[![CI](https://github.com/silverenternal/happybirthday/actions/workflows/ci.yml/badge.svg)](https://github.com/silverenternal/happybirthday/actions/workflows/ci.yml)
+[![CI](https://github.com/silverenternal/epsilonAnime/actions/workflows/ci.yml/badge.svg)](https://github.com/silverenternal/epsilonAnime/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 终端里的网易云音乐 ASCII 可视化器。Rust 负责全屏终端渲染、数学动画和歌词叠加，Python 负责网易云数据、封面点阵、流式音频解码与律动分析。
@@ -42,7 +42,7 @@
 - 场景每约 2–4 拍根据实时 BPM、RMS、频谱、质心和立体声宽度重选，并每三个场景插入一次至少八拍的分形章节；生成宏内部的动态参数也直接读取音乐特征。
 - crossfade 同时覆盖 intensity/depth/light；`Alt+D` 禁用/恢复、`Alt+Shift+D` 重置策略，剩余模式少于四个时会自动修复配置。
 - Ghostty/Kitty 可通过 Kitty graphics 显示真像素封面，其他终端以及窗口重叠/弹窗状态自动回退盲文。
-- Shell 支持多标签、滚轮回看/全文搜索、持久历史、宿主粘贴、Shift+鼠标选择复制、OSC8 链接和独立 `HAPPYBIRTHDAY_SHELL_CWD`。
+- Shell 支持多标签、滚轮回看/全文搜索、持久历史、宿主粘贴、Shift+鼠标选择复制、OSC8 链接和独立 `EPSILON_ANIME_SHELL_CWD`。
 - 窗口支持边缘吸附、碰撞避让、拖拽预览、焦点、最小化列表恢复、层级调整和带版本布局持久化；刻意全量堆叠仍保留 0.8 毛玻璃。
 - 高频渲染 scratch 按线程复用；终端 writer 使用有界背压，`--stats` 在退出时输出稳定的 JSON 指标，包括采样、编码、写入等待与脏瓦片。
 - 支持中文/英文/日文界面标题、高对比度与色盲安全调色板；`Ctrl-R` 安全重载配置，核心热键可在 TOML 中修改。

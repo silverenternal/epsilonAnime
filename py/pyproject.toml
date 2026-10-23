@@ -1,7 +1,7 @@
 [project]
-name = "happybirthday-backend"
+name = "epsilonanime-backend"
 version = "0.1.0"
-description = "NetEase audio, lyrics, cover and rhythm backend for happybirthday"
+description = "NetEase audio, lyrics, cover and rhythm backend for epsilonAnime"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "silverenternal" }]

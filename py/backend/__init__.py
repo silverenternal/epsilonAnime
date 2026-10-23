@@ -1,1 +1,1 @@
-"""Happybirthday Python backend."""
+"""epsilonAnime Python backend."""

@@ -94,7 +94,13 @@ def _remove_cover(payload: dict, cache_root: Path) -> None:
                 resolved.relative_to(temp_root)
         except (OSError, ValueError):
             continue
-        if path.name.startswith(("happybirthday-cover-", "happybirthday-particles-")):
+        prefixes = (
+            "epsilonanime-cover-",
+            "epsilonanime-particles-",
+            "happybirthday-cover-",
+            "happybirthday-particles-",
+        )
+        if path.name.startswith(prefixes):
             try:
                 os.remove(path)
             except OSError:

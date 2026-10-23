@@ -387,6 +387,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
+name = "epsilon_anime"
+version = "0.1.0"
+dependencies = [
+ "anim_macro",
+ "anyhow",
+ "base64",
+ "clap",
+ "crossterm",
+ "fastrand",
+ "glam",
+ "libc",
+ "noise",
+ "num-complex",
+ "portable-pty",
+ "proptest",
+ "puruspe",
+ "rayon",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sphrs",
+ "toml",
+ "unicode-width",
+ "vt100",
+ "wide",
+ "windows-sys",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -452,36 +482,6 @@ name = "glam"
 version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc148d4ddd3930c52f9e5ae79b89805c6f07e9ff417e7b083e0348cea60a5aba"
-
-[[package]]
-name = "happybirthday"
-version = "0.1.0"
-dependencies = [
- "anim_macro",
- "anyhow",
- "base64",
- "clap",
- "crossterm",
- "fastrand",
- "glam",
- "libc",
- "noise",
- "num-complex",
- "portable-pty",
- "proptest",
- "puruspe",
- "rayon",
- "rustfft",
- "serde",
- "serde_json",
- "sha2",
- "sphrs",
- "toml",
- "unicode-width",
- "vt100",
- "wide",
- "windows-sys",
-]
 
 [[package]]
 name = "hashbrown"

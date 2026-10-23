@@ -47,7 +47,7 @@ impl Backend {
             let socket = socket_path(SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed));
             let analyzer = PcmAnalyzer::bind(socket.clone(), tx.clone()).ok();
             if analyzer.is_some() {
-                command.env("HAPPYBIRTHDAY_PCM_SOCKET", &socket);
+                command.env("EPSILON_ANIME_PCM_SOCKET", &socket);
             }
             analyzer
         };

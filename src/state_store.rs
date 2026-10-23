@@ -12,19 +12,31 @@ struct Envelope<T> {
 }
 
 pub fn state_dir() -> PathBuf {
-    if let Ok(path) = std::env::var("HAPPYBIRTHDAY_STATE_DIR") {
+    if let Ok(path) = std::env::var("EPSILON_ANIME_STATE_DIR")
+        .or_else(|_| std::env::var("HAPPYBIRTHDAY_STATE_DIR"))
+    {
         return PathBuf::from(path);
     }
-    if cfg!(windows)
-        && let Ok(base) = std::env::var("APPDATA")
-    {
-        return PathBuf::from(base).join("happybirthday");
+    let base = if cfg!(windows) {
+        std::env::var("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."))
+    } else if let Ok(path) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(path)
+    } else {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        PathBuf::from(home).join(".config")
+    };
+    migrate_legacy_state(&base)
+}
+
+fn migrate_legacy_state(base: &Path) -> PathBuf {
+    let current = base.join("epsilonAnime");
+    let legacy = base.join("happybirthday");
+    if !current.exists() && legacy.exists() && fs::rename(&legacy, &current).is_err() {
+        return legacy;
     }
-    if let Ok(base) = std::env::var("XDG_CONFIG_HOME") {
-        return PathBuf::from(base).join("happybirthday");
-    }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".config").join("happybirthday")
+    current
 }
 
 pub fn load<T>(name: &str, version: u32) -> T
@@ -171,10 +183,8 @@ mod tests {
     }
 
     fn temp_root(label: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "happybirthday-state-{label}-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("epsilonanime-state-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         root
@@ -229,5 +239,20 @@ mod tests {
                 .contains(".tmp")
         }));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_state_directory_is_migrated_without_data_loss() {
+        let base = temp_root("legacy-base");
+        let legacy = base.join("happybirthday");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("playback.json"), b"legacy").unwrap();
+
+        let migrated = migrate_legacy_state(&base);
+
+        assert_eq!(migrated, base.join("epsilonAnime"));
+        assert_eq!(fs::read(migrated.join("playback.json")).unwrap(), b"legacy");
+        assert!(!legacy.exists());
+        let _ = fs::remove_dir_all(base);
     }
 }

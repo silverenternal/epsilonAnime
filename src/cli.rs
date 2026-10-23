@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "happybirthday",
+    name = "epsilonAnime",
     version,
     about = "Terminal ASCII music visualizer powered by NetEase Cloud Music"
 )]

@@ -97,7 +97,7 @@ class LibraryAndCacheTests(unittest.TestCase):
     def test_cache_prunes_old_entries_and_orphan_cover(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            cover = root / "happybirthday-cover-test.rgb"
+            cover = root / "epsilonanime-cover-test.rgb"
             cover.write_bytes(b"x")
             for index in range(3):
                 payload = {

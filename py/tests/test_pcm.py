@@ -9,8 +9,11 @@ from backend.pcm import PcmSender
 
 
 class PcmSenderTests(unittest.TestCase):
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"), "Unix sockets are unavailable")
     def test_stream_protocol(self):
-        path = os.path.join(tempfile.gettempdir(), f"happybirthday-test-{os.getpid()}.sock")
+        path = os.path.join(
+            tempfile.gettempdir(), f"epsilonanime-test-{os.getpid()}.sock"
+        )
         try:
             os.unlink(path)
         except FileNotFoundError:
@@ -41,7 +44,7 @@ class PcmSenderTests(unittest.TestCase):
         server.close()
         os.unlink(path)
 
-        self.assertEqual(capture["header"][:4], b"HBP1")
+        self.assertEqual(capture["header"][:4], b"EAP1")
         self.assertEqual(int.from_bytes(capture["header"][4:8], "little"), 44100)
         self.assertEqual(len(capture["packet"]), 8 + len(samples) * 4)
 

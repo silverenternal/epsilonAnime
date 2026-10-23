@@ -5,4 +5,4 @@ if [[ ! -x py/.venv/bin/python ]]; then
   (cd py && uv sync)
 fi
 cargo build --release
-exec target/release/happybirthday "$@"
+exec target/release/epsilonAnime "$@"

@@ -19,7 +19,7 @@ class CoverParticleTests(unittest.TestCase):
             magic, _version, _flags, stored_count, width, height = struct.unpack(
                 "<4sHHIHH", header
             )
-            self.assertEqual(magic, b"HBPC")
+            self.assertEqual(magic, b"EAPC")
             self.assertEqual((width, height), (512, 512))
             self.assertEqual(stored_count, count)
             self.assertGreater(count, 1000)

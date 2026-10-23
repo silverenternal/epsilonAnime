@@ -91,7 +91,9 @@ fn place_existing(rect: Rect, image_id: u32) -> Vec<u8> {
 }
 
 fn require_ack() -> bool {
-    env::var("HAPPYBIRTHDAY_KITTY_REQUIRE_ACK").is_ok_and(|value| value != "0")
+    env::var("EPSILON_ANIME_KITTY_REQUIRE_ACK")
+        .or_else(|_| env::var("HAPPYBIRTHDAY_KITTY_REQUIRE_ACK"))
+        .is_ok_and(|value| value != "0")
 }
 
 pub struct KittyCache {

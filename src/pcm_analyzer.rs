@@ -13,7 +13,7 @@ use wide::f32x8;
 
 const FFT_SIZE: usize = 2048;
 const BANDS: usize = 16;
-const MAGIC: &[u8; 4] = b"HBP1";
+const MAGIC: &[u8; 4] = b"EAP1";
 
 pub struct PcmAnalyzer {
     path: PathBuf,
@@ -103,9 +103,10 @@ fn read_stream(mut stream: UnixStream, tx: &Sender<BackendEvent>) {
         if stream.read_exact(&mut raw).is_err() {
             break;
         }
-        let samples: Vec<f32> = raw
-            .chunks_exact(4)
-            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+        let (frames, _) = raw.as_chunks::<4>();
+        let samples: Vec<f32> = frames
+            .iter()
+            .map(|bytes| f32::from_le_bytes(*bytes))
             .collect();
         if let Some(features) = engine.process(&samples, timestamp)
             && tx
@@ -373,7 +374,7 @@ fn stddev(values: &[f32], mean: f32) -> f32 {
 
 pub fn socket_path(counter: u64) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "happybirthday-pcm-{}-{counter}.sock",
+        "epsilonanime-pcm-{}-{counter}.sock",
         std::process::id()
     ))
 }
@@ -406,7 +407,7 @@ mod tests {
         let analyzer = PcmAnalyzer::bind(path.clone(), tx).unwrap();
         let mut sender = UnixStream::connect(&path).unwrap();
         sender
-            .write_all(&[b'H', b'B', b'P', b'1', 0x44, 0xac, 0, 0, 2, 0, 0, 0])
+            .write_all(&[b'E', b'A', b'P', b'1', 0x44, 0xac, 0, 0, 2, 0, 0, 0])
             .unwrap();
         let mut samples = Vec::new();
         for i in 0..1024 {

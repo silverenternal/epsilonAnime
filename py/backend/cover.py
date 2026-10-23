@@ -37,7 +37,7 @@ def materialize(url: str, size: int = 512, cleanup: bool = True) -> CoverInfo:
     resized = cv2.resize(rgb, (size, size), interpolation=cv2.INTER_AREA)
     resized = np.ascontiguousarray(resized)
     path = os.path.join(
-        tempfile.gettempdir(), f"happybirthday-cover-{os.getpid()}.rgb"
+        tempfile.gettempdir(), f"epsilonanime-cover-{os.getpid()}.rgb"
     )
     with open(path, "wb") as handle:
         handle.write(resized.tobytes())
@@ -98,11 +98,11 @@ def _write_particles(rgb: np.ndarray) -> tuple[str, int]:
                     )
                 )
     path = os.path.join(
-        tempfile.gettempdir(), f"happybirthday-particles-{os.getpid()}.hbp"
+        tempfile.gettempdir(), f"epsilonanime-particles-{os.getpid()}.hbp"
     )
     with open(path, "wb") as handle:
         handle.write(
-            struct.pack("<4sHHIHH", b"HBPC", 1, 0, len(particles), work_size, work_size)
+            struct.pack("<4sHHIHH", b"EAPC", 1, 0, len(particles), work_size, work_size)
         )
         for particle in particles:
             handle.write(struct.pack("<HHBBBBBB", *particle))

@@ -15,14 +15,16 @@ class PcmSender:
     def __init__(self, path: str, sample_rate: int, channels: int = 2) -> None:
         self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.socket.connect(path)
-        self.socket.sendall(struct.pack("<4sIHH", b"HBP1", sample_rate, channels, 0))
+        self.socket.sendall(struct.pack("<4sIHH", b"EAP1", sample_rate, channels, 0))
         self.queue: queue.SimpleQueue = queue.SimpleQueue()
         self.thread = threading.Thread(target=self._run, name="pcm-sender", daemon=True)
         self.thread.start()
 
     @classmethod
     def from_env(cls, sample_rate: int) -> "PcmSender | None":
-        path = os.getenv("HAPPYBIRTHDAY_PCM_SOCKET")
+        path = os.getenv("EPSILON_ANIME_PCM_SOCKET") or os.getenv(
+            "HAPPYBIRTHDAY_PCM_SOCKET"
+        )
         if not path:
             return None
         try:

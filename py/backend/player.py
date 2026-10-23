@@ -21,7 +21,7 @@ class HttpSource(miniaudio.StreamableSource):
         self.url = url
         self.response = response
         self.headers = {
-            "User-Agent": "Mozilla/5.0 happybirthday",
+            "User-Agent": "Mozilla/5.0 epsilonAnime/0.1",
             "Referer": "https://music.163.com/",
         }
         self.total_bytes = _response_length(response)
@@ -81,7 +81,11 @@ def _response_length(response: requests.Response, fallback: int = 0) -> int:
 
 
 def playback_device_id():
-    requested = os.getenv("HAPPYBIRTHDAY_AUDIO_DEVICE", "").strip()
+    requested = (
+        os.getenv("EPSILON_ANIME_AUDIO_DEVICE")
+        or os.getenv("HAPPYBIRTHDAY_AUDIO_DEVICE")
+        or ""
+    ).strip()
     if not requested:
         return None, ""
     try:
@@ -94,7 +98,11 @@ def playback_device_id():
 
 
 def playback_backends():
-    backend = os.getenv("HAPPYBIRTHDAY_AUDIO_BACKEND", "").strip().lower()
+    backend = (
+        os.getenv("EPSILON_ANIME_AUDIO_BACKEND")
+        or os.getenv("HAPPYBIRTHDAY_AUDIO_BACKEND")
+        or ""
+    ).strip().lower()
     if backend == "null":
         return [miniaudio.Backend.NULL]
     return []
@@ -127,7 +135,10 @@ def _open_stream(track: Track, sample_rate: int, seek_seconds: float = 0.0):
         track.audio_url,
         stream=True,
         timeout=(15, 60),
-        headers={"User-Agent": "Mozilla/5.0 happybirthday", "Referer": "https://music.163.com/"},
+        headers={
+            "User-Agent": "Mozilla/5.0 epsilonAnime/0.1",
+            "Referer": "https://music.163.com/",
+        },
     )
     response.raise_for_status()
     source = HttpSource(track.audio_url, response)
@@ -309,7 +320,7 @@ def _play_stream(
             buffersize_msec=160,
             device_id=device_id,
             backends=backends,
-            app_name="happybirthday",
+            app_name="epsilonAnime",
         )
     except Exception as exc:
         print(f"audio: no output device, analyze-only fallback: {exc}", file=sys.stderr)
