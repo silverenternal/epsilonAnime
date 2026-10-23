@@ -33,12 +33,12 @@ jobs:
         run: |
           cargo install cargo-llvm-cov --locked
           cargo llvm-cov --all-targets --lcov --output-path lcov.info
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Linux'
         with:
           name: coverage-lcov
           path: lcov.info
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: happybirthday-${{ runner.os }}
           path: target/release/happybirthday*
