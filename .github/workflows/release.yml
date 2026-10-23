@@ -40,7 +40,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.artifact }}
-          path: dist/*
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
           if-no-files-found: error
           retention-days: 1
 
@@ -58,7 +60,7 @@ jobs:
           merge-multiple: true
       - name: Build checksums
         working-directory: dist
-        run: sha256sum epsilonAnime-* > SHA256SUMS
+        run: sha256sum ./*.tar.gz ./*.zip > SHA256SUMS
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
