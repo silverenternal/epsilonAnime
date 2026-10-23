@@ -1,0 +1,74 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-latest, windows-latest]
+        include:
+          - runner: ubuntu-22.04
+            artifact: linux
+          - runner: macos-latest
+            artifact: macos
+          - runner: windows-latest
+            artifact: windows
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify release version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          rust_version="$(awk '/^version = / {gsub(/"/, "", $3); print $3; exit}' Cargo.toml)"
+          python_version="$(awk '/^version = / {gsub(/"/, "", $3); print $3; exit}' py/pyproject.toml)"
+          test "$tag_version" = "$rust_version"
+          test "$tag_version" = "$python_version"
+      - run: cargo build --release --locked
+      - run: ./scripts/package_release.sh "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Build checksums
+        working-directory: dist
+        run: sha256sum epsilonAnime-* > SHA256SUMS
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          notes="docs/releases/$tag.md"
+          args=(release create "$tag" dist/* --verify-tag --title "epsilonAnime $tag")
+          if [[ -f "$notes" ]]; then
+            args+=(--notes-file "$notes")
+          else
+            args+=(--generate-notes)
+          fi
+          gh "${args[@]}"

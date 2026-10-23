@@ -1,4 +1,5 @@
 /target
+/dist
 /py/.venv
 /py/target
 __pycache__/

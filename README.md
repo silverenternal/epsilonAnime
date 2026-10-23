@@ -63,6 +63,16 @@
 - Ghostty、Kitty、iTerm2、WezTerm 等支持 truecolor 的终端
 - macOS/Linux；Python 由 uv 管理，固定为 CPython 3.12
 
+## 下载预编译版本
+
+从 [Releases](https://github.com/silverenternal/epsilonAnime/releases) 下载对应平台的完整运行包。归档已经包含可执行文件、Python 后端、uv 锁文件和启动脚本；安装 uv 后解压即可运行：
+
+```bash
+./scripts/run.sh --demo
+```
+
+Windows 使用 `.\scripts\run.ps1 --demo`。发布页同时提供 `SHA256SUMS` 用于校验下载文件。
+
 首次运行：
 
 ```bash

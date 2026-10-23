@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+
+binary="$root/target/release/epsilonAnime"
+if [[ ! -x "$binary" ]]; then
+  binary="$root/epsilonAnime"
+fi
+if [[ ! -x "$binary" ]]; then
+  cargo build --release
+  binary="$root/target/release/epsilonAnime"
+fi
 if [[ ! -x py/.venv/bin/python ]]; then
   (cd py && uv sync)
 fi
-cargo build --release
-exec target/release/epsilonAnime "$@"
+exec "$binary" "$@"
