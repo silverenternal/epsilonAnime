@@ -27,7 +27,7 @@ rayon = "1.12"
 rustfft = "6.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
+sha2 = "0.11"
 sphrs = "0.2"
 toml = "0.9"
 unicode-width = "0.2"
