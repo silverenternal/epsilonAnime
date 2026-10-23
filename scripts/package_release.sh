@@ -57,8 +57,9 @@ find "$stage/py" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 if [[ "$platform" == windows ]]; then
   archive="$stage.zip"
   rm -f -- "$archive"
+  relative_stage="dist/$name"
   pwsh -NoProfile -Command \
-    "Compress-Archive -LiteralPath '$stage' -DestinationPath '$archive' -CompressionLevel Optimal"
+    "Compress-Archive -LiteralPath '$relative_stage' -DestinationPath '$relative_stage.zip' -CompressionLevel Optimal"
 else
   archive="$stage.tar.gz"
   tar -C "$root/dist" -czf "$archive" "$name"
