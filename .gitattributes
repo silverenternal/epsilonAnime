@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.ansi text eol=lf
+*.lock linguist-generated=true
+py/uv.lock linguist-generated=true
+py/vendor/** -whitespace

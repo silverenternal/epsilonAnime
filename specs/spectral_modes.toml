@@ -1,0 +1,111 @@
+[[mode]]
+kx = 1.0
+ky = 0.0
+phase = 0.0
+speed = 0.35
+weight = 0.32
+
+[[mode]]
+kx = 0.0
+ky = 1.0
+phase = 1.7
+speed = -0.28
+weight = 0.30
+
+[[mode]]
+kx = 1.0
+ky = 1.0
+phase = 0.8
+speed = 0.52
+weight = 0.25
+
+[[mode]]
+kx = 2.0
+ky = -1.0
+phase = 2.4
+speed = -0.44
+weight = 0.21
+
+[[mode]]
+kx = 2.0
+ky = 2.0
+phase = 3.2
+speed = 0.31
+weight = 0.18
+
+[[mode]]
+kx = 3.0
+ky = 1.0
+phase = 0.4
+speed = -0.63
+weight = 0.16
+
+[[mode]]
+kx = 1.0
+ky = -3.0
+phase = 4.1
+speed = 0.41
+weight = 0.14
+
+[[mode]]
+kx = 4.0
+ky = 0.0
+phase = 1.2
+speed = 0.73
+weight = 0.12
+
+[[mode]]
+kx = 0.0
+ky = 4.0
+phase = 2.8
+speed = -0.56
+weight = 0.11
+
+[[mode]]
+kx = 3.0
+ky = -2.0
+phase = 5.0
+speed = 0.47
+weight = 0.10
+
+[[mode]]
+kx = 5.0
+ky = 1.0
+phase = 0.6
+speed = -0.82
+weight = 0.08
+
+[[mode]]
+kx = 2.0
+ky = 4.0
+phase = 3.7
+speed = 0.58
+weight = 0.07
+
+[[mode]]
+kx = 6.0
+ky = -1.0
+phase = 1.9
+speed = 0.91
+weight = 0.06
+
+[[mode]]
+kx = 4.0
+ky = 3.0
+phase = 4.8
+speed = -0.69
+weight = 0.05
+
+[[mode]]
+kx = 7.0
+ky = 2.0
+phase = 2.1
+speed = 1.04
+weight = 0.04
+
+[[mode]]
+kx = 5.0
+ky = -4.0
+phase = 0.2
+speed = -0.88
+weight = 0.035

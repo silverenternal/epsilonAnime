@@ -1,0 +1,21 @@
+animation = "adaptive"
+palette = "afterglow"
+charset = "mixed"
+fps = 120
+cover_blend = 0.62
+cover_style = "braille"
+cover_backend = "auto"
+show_lyrics = true
+show_meta = true
+show_stats = false
+show_audio_scope = true
+show_logs = true
+cover_width_ratio = 0.30
+locale = "zh-cn"
+accessibility = "standard"
+
+[hotkeys]
+reload = "ctrl-r"
+cycle_locale = "alt-y"
+shell_next_tab = "alt-]"
+shell_previous_tab = "alt-["

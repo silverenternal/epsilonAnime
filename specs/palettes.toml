@@ -1,0 +1,35 @@
+[[palette]]
+name = "afterglow"
+colors = ["#05070c", "#111827", "#0f766e", "#67e8f9", "#f6c177", "#fff7e8"]
+
+[[palette]]
+name = "neon"
+colors = ["#050510", "#3a0ca3", "#7209b7", "#f72585", "#4cc9f0", "#ffffff"]
+
+[[palette]]
+name = "aurora"
+colors = ["#02040a", "#052e2b", "#0b7a75", "#5ce1e6", "#b8f2e6", "#ffffff"]
+
+[[palette]]
+name = "ocean"
+colors = ["#01040d", "#03256c", "#1768ac", "#06bee1", "#b2f7ef", "#ffffff"]
+
+[[palette]]
+name = "fire"
+colors = ["#080002", "#3d0000", "#a30000", "#ff3d00", "#ffb300", "#fffde7"]
+
+[[palette]]
+name = "candy"
+colors = ["#12001c", "#5a189a", "#c77dff", "#ff8fab", "#ffd6a5", "#ffffff"]
+
+[[palette]]
+name = "high_contrast"
+colors = ["#000000", "#111111", "#FFD400", "#00F0FF", "#FF4D6D", "#FFFFFF"]
+
+[[palette]]
+name = "deuteranopia"
+colors = ["#050505", "#003B5C", "#0072B2", "#E69F00", "#CC79A7", "#FFFFFF"]
+
+[[palette]]
+name = "tritanopia"
+colors = ["#050505", "#4B0055", "#D55E00", "#009E73", "#56B4E9", "#FFFFFF"]

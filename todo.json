@@ -1,0 +1,953 @@
+{
+  "project": "happybirthday",
+  "title": "终端 ASCII 动画 + 网易云音乐可视化（律动驱动）",
+  "updated_at": "2026-10-24",
+  "status": "done",
+  "overview": "在 Ghostty 等现代终端下运行的 ASCII 动画项目：输入网易云歌曲链接后，由 Python 侧（uv 管理）抓取封面/歌词/流媒体音频并做律动分析，Rust 侧负责渲染由「广义函数」生成的动画、把封面转成高清点阵、实时显示歌词，并让动画随歌曲律动变化。所有决策基于下方 research_findings 与 decisions。",
+  "environment": {
+    "os": "macOS (aarch64)",
+    "rust": "1.94.0",
+    "python": "系统 3.14.4，但项目内用 uv 管理并固定 3.12",
+    "uv": "0.12.23 已安装",
+    "ffmpeg": "未安装（方案不依赖它）",
+    "network": "可用，music.163.com 可达"
+  },
+  "research_findings": {
+    "netease_api": {
+      "conclusion": "采用 pyncm 的 1.8.1 快照并 vendor 进仓库。PyPI 上的 pyncm 包已 404，GitHub 上游仓库也已不可访问；Code-MonkeyZhang/pyncm 是可用的 1.8.1 快照，本地用 uv(3.11) 实测通过。",
+      "verified_with_song": "https://music.163.com/song?id=3347119767",
+      "evidence": [
+        "GetTrackDetail([3347119767]) 匿名可用：返回歌名/歌手、时长 dt=205588ms、专辑封面 picUrl=https://p2.music.126.net/lP1Z8Yd272N32aQwK5NljA==/7917583232258478.jpg、fee=0（免费歌曲）。",
+        "GetTrackLyricsNew('3347119767') 匿名可用：lrc.lyric 内为 LRC 时间戳行，且混有 {\"t\":-1000,\"c\":[...]} 元数据 JSON 行，解析时需过滤。",
+        "GetTrackAudioV1([3347119767], level='standard') 匿名可用：返回 data[0].url 为 http 直链（128k mp3, sr=48000），expi=1200 表示链接约 20 分钟过期，另含 gain/peak 可用于响度归一。",
+        "付费/版权受限歌曲可能需要登录态或 CVIP；pyncm 提供二维码登录 LoginQrcodeUnikey/Check 与 Cookie 登录 LoginViaCookie，作为可选能力。",
+        "海外访问可能触发 460 Cheating，实测加 X-Real-IP=118.88.88.88 可规避。"
+      ],
+      "key_apis": {
+        "track_detail": "pyncm.apis.track.GetTrackDetail",
+        "track_audio": "pyncm.apis.track.GetTrackAudioV1 (level: standard/exhigh/lossless/hires)",
+        "track_lyrics": "pyncm.apis.track.GetTrackLyricsNew",
+        "login_qr": "pyncm.apis.login.LoginQrcodeUnikey + LoginQrcodeCheck",
+        "login_cookie": "pyncm.apis.login.LoginViaCookie"
+      },
+      "dependency_note": "pyncm 仅依赖 requests，加密（weapi/eapi）为内置纯 Python 实现，vendor 成本低。"
+    },
+    "netease_login_and_library": {
+      "conclusion": "复用 vendor 的 pyncm 登录与歌单 API，二维码编码交给 python-qrcode；Rust 只负责终端展示与状态协调，不自行实现网易云加密登录协议。",
+      "evidence": [
+        "pyncm 的 LoginQrcodeUnikey 创建 unikey，GetLoginQRCodeUrl 加入 chainId，LoginQrcodeCheck 以 803/800 表示成功/过期，符合当前网页登录流程。",
+        "实测 auth qr 进程返回合法二维码 URL 与 24 行终端矩阵，证明 API 和二维码事件链路可达。",
+        "GetCurrentLoginStatus 提供 profile/account；GetUserPlaylists 提供歌单摘要，GetPlaylistAllTracks 可返回完整歌曲列表。",
+        "登录成功后持久化 MUSIC_U，并将 target/netease-session.json 设置为 0600；pyncm LoginViaCookie 在后续媒体会话恢复登录态。"
+      ]
+    },
+    "cover_detail_rendering": {
+      "conclusion": "封面清晰度的主因不是 512 扫描不足，而是正方形图像映射到 2:1 终端字符后被拉伸，以及硬阈值损失局部对比。默认审美改为彩色盲文，half-block 保留为可选渲染器。",
+      "evidence": [
+        "Chafa 等终端图像工具在彩图中优先 half-block truecolor，因为一格可携带上下两个独立颜色；braille 空间分辨率高但每格只有一个前景色。",
+        "原 Layout 将封面宽度硬限制为 56 格，且未显式把 inner 区域的盲文点阵宽高校正到接近正方形。",
+        "双线性采样、局部对比度和边缘阈值已改为共用底座；测试确认 braille 输出只包含盲文字符，hybrid 输出 500+ 真彩单元和 64+ 前景色。"
+      ]
+    },
+    "playlist_playback_reliability": {
+      "conclusion": "歌单偶发无法播放的首要原因是 miniaudio 网络源句柄生命周期竞态，不是歌单 ID 错误；同时增加过期直链刷新与音频格式降级作为第二道保护。",
+      "evidence": [
+        "target/backend.log 记录 ffi.from_handle address points to garbage，以及句柄地址被 PlaybackDevice 复用后触发 error_in_readcallback AttributeError。",
+        "miniaudio.stream_any 只把 StreamableSource 保存为 cdata handle，旧实现只返回 response+stream，Python GC 后可析构真正的 source 对象。",
+        "修复后连续抓取并解码 4 首真实歌曲，每首多次强制 gc.collect，全部成功；日志不再崩溃。",
+        "NetEase 媒体直链会过期，因此打开失败时用 GetTrackAudioV1(encodeType=mp3) 刷新；不兼容格式回退 GetTrackAudio 128k MP3。"
+      ]
+    },
+    "spatial_animation": {
+      "conclusion": "3D 效果必须进入数值场和深度着色层，不能只在字符网格上投影离散点；场景骨架应保持一个乐句的可读性，同时让句内参数持续响应歌词和音频。",
+      "evidence": [
+        "原 3D trail 使用字符网格落点和逐帧衰减，分辨率只有 w*h，且帧率变化会改变轨迹寿命。",
+        "新空间场使用 2x4 子像素 buffer、glam 相机、深度加权抗锯齿线段；新增 Hopf S3 纤维和 Klein 瓶浸入。",
+        "3D 波面使用 math_kernel! 生成基础形变函数，保持元编程桥接。",
+        "场景骨架按四句歌词更换，句内继续由 lyric_progress、spectrum、bass、centroid、stereo_width 改变；160x48 release 基准 18 模式最低约 540fps。"
+      ]
+    },
+    "workspace_and_shell": {
+      "conclusion": "内嵌工作区采用 portable-pty 的真实 PTY 与 vt100 的终端状态解析，不自行模拟 shell；日志区采用增量文件尾读和有界队列，避免长期运行下重复扫描与内存增长。",
+      "evidence": [
+        "portable-pty 0.9 提供 openpty、spawn_command、resize、reader/writer 和 child kill 接口，来自 WezTerm 工程，跨 macOS/Linux/Windows。",
+        "vt100 0.18 提供 Parser、Screen::cell、RGB/indexed Color、宽字符和光标状态，可直接映射到现有 Buffer。",
+        "PTY 单测实际启动 $SHELL，执行 printf，并从 vt100 screen.contents 读到 shell-ok。",
+        "默认封面宽度比例降至 0.30，日志面板在频谱与歌词之间响应式分配高度，F3/Alt-L 可收起。",
+        "日志每 300ms 从 backend/auth/prefetch 末尾最多读取 32KB，80 行环形缓冲，文件截断后自动从头恢复。"
+      ]
+    },
+    "window_compositing": {
+      "conclusion": "窗口重叠不做全局统一降透明，而是按 z-order 只让上层窗口对已绘制内容做 80% glass 合成；可缩放窗口包括主面板、日志、资料/歌单弹窗和 Shell。",
+      "evidence": [
+        "终端单元没有原生 alpha，因此 Buffer::glass_rect 对当前 cell 的 fg/bg 做 0.8 tint 合成，并用确定性细颗粒模拟磨砂纹理。",
+        "下层窗口在其绘制阶段保持不透明，只有后来覆盖它的窗口触发 glass，避免多层 0.8 叠加后变成近乎全不透明。",
+        "Shell 使用 Transparent frame + 每 cell 0.8 合成，资料弹窗始终作为 glass modal；Cover/Audio/Logs/Lyrics 使用实际矩形相交检测。",
+        "主面板、Logs、Library modal 和 Shell 都进入同一拖动/右下角缩放命中模型；◢ 作为可见缩放把手。"
+      ]
+    },
+    "audio_streaming_and_analysis": {
+      "conclusion": "用 miniaudio 承担「网络流解码 + 播放」，分析在播放回调线程内对同一批 PCM 做，保证音画与歌词零漂移；不引入 ffmpeg。",
+      "evidence": [
+        "pyminiaudio 1.71 提供 stream_any(StreamableSource, source_format, ...) 支持网络流（配合 requests.get(url, stream=True).raw 包装为 StreamableSource）。",
+        "PlaybackDevice.start(stream) 可直接消费生成器；stream_with_callbacks(stream, frame_process_method=analyze, progress_callback=on_progress) 让分析与播放共享同一帧流，progress_callback 给出已播放帧数 frames_played。",
+        "歌词与动画同步用 frames_played/sample_rate 作为主时钟，避免 wall-clock 漂移。",
+        "mp3/flac/wav/ogg 由 miniaudio 内置解码；请求时固定优先 mp3，并对其他返回格式做 URL 扩展名兼容检测。",
+        "miniaudio 已有 cp312/cp314 macOS 轮子；opencv-python 5.0.0.93 使用 cp37-abi3 轮子，3.12/3.14 均可安装。"
+      ],
+      "analysis_features": [
+        "RMS 能量（整体亮度/冲击）",
+        "STFT/FFT 分频带能量：bass/mid/treble（驱动色温、扭曲量、缩放等参数）",
+        "spectral flux 起音检测（onset，触发 beat 冲击动画）",
+        "瞬时节奏强度（短窗能量相对长窗的比值）"
+      ]
+    },
+    "terminal_rendering": {
+      "conclusion": "封面提供 braille、hybrid、half-block 三种渲染器；项目默认采用彩色 braille，half-block truecolor 作为高色差照片的可选模式。Ghostty 支持 Kitty graphics，作为未来真高清图片模式。",
+      "evidence": [
+        "half-block 技术是 chafa 等终端图片工具的核心手段（symbols 模式），原理：字符上半用前景色、下半用背景色。",
+        "braille（⣿）每格 2x4=8 个点，空间密度最高且每格仍可携带封面色；用户回放确认盲文纹理比半块色块更舒适，因此改为默认。",
+        "Ghostty 官方 features 页明确支持 Kitty graphics protocol。",
+        "crossterm 0.29 提供 alternate screen、raw mode、光标隐藏、truecolor(SetForegroundColor/SetBackgroundColor) 与终端尺寸查询，足够做全屏帧缓冲。"
+      ],
+      "modes": {
+        "dot_matrix_primary": "braille（2x4 点阵，保留每单元封面色，项目默认）",
+        "dot_matrix_colour_alt": "hybrid / half-block truecolor（可选）",
+        "hd_image_optional": "Kitty graphics protocol（真高清图片，仅 Ghostty/Kitty 类终端）"
+      }
+    },
+    "function_animations": {
+      "conclusion": "动画统一建模为 f(x, y, t, audio) -> (intensity, color)，用「广义函数」表达；首批实现 4 个视觉效果最好的函数动画，状态式动画作为扩展。",
+      "candidates": {
+        "plasma": "多个正弦/余弦的加权叠加，色彩丰富、计算便宜，是终端动画的经典默认。",
+        "fbm_domain_warp": "分形布朗运动噪声 + 域扭曲（Inigo Quilez 2002 技术），有机流动纹理，视觉档次最高、性价比好。",
+        "wave_interference": "多个点源波纹的叠加（涟漪），参数天然可被 bass/beat 调制（频率、幅度、速度）。",
+        "julia_set": "迭代 f(z)=z^2+c，c 随 t/律动缓慢变化，分形边界清晰，彩色映射后非常亮眼；逐像素独立，便于宏展开并行。",
+        "reaction_diffusion_gray_scott": "状态式（需保存上一帧浓度场），产生有机的斑点/脉络，作为高级扩展。",
+        "flow_field_particles": "curl noise 流场 + 粒子平流，轨迹感强，状态式且成本较高，作为高级扩展。"
+      },
+      "layering_and_shading": {
+        "intensity_to_glyph": "值 v∈[0,1] 经 ASCII ramp LUT（如  .:-=+*#%@）映射为字符密度，实现亮度一通道。",
+        "intensity_to_color": "同一 v 经调色板 LUT 映射为 truecolor 前景/背景色，实现亮度二通道；两者叠加表达「亮暗」。",
+        "layer_blend": "图层合成支持 ADD/SCREEN/MULTIPLY/OVER/LIGHTEN，封面作为底层、函数动画层叠加、歌词作为底栏 overlay。",
+        "audio_driven": "bass/mid/treble/onset 映射到动画参数（扭曲量、频率、缩放、色温、亮度），onset 触发冲击效果。"
+      }
+    },
+    "advanced_math_animations": {
+      "conclusion": "把「高级数学函数」作为动画主引擎：统一抽象为逐点可求值的数学表达式 f(x,y,t,audio)，每个动画是一个可组合的隐式场/迭代/点过程，再由宏生成逐像素内核与编译期查找表。",
+      "catalog": [
+        {
+          "name": "superformula_gielis",
+          "kind": "implicit_polar_field",
+          "formula": "r(phi) = (|cos(m*phi/4)/a|^n2 + |sin(m*phi/4)/b|^n3)^(-1/n1)",
+          "params": "m(旋转对称数)、a,b、n1,n2,n3",
+          "effect": "单条公式可生成圆/星形/多边形/花瓣等自然与抽象形状；随时间调制 m 与 n1 会平滑「进化/变形」，映射为距离场后加边缘辉光非常出彩。",
+          "ref": "Gielis 2003 (Wikipedia: Superformula)"
+        },
+        {
+          "name": "clifford_attractor",
+          "kind": "point_iteration_trails",
+          "formula": "x' = sin(a*y) + c*cos(a*x);  y' = sin(b*x) + d*cos(b*y)",
+          "params": "a,b,c,d",
+          "effect": "逐点迭代后投到累积缓冲，形成细腻的流线型吸引子轨迹；律动可驱动 a..d 缓慢漂移，轨迹如活物。",
+          "ref": "Paul Bourke 2004 (Clifford Attractors)"
+        },
+        {
+          "name": "peter_de_jong_attractor",
+          "kind": "point_iteration_trails",
+          "formula": "x' = sin(a*y) - cos(b*x);  y' = sin(c*x) - cos(d*y)",
+          "params": "a,b,c,d",
+          "effect": "Clifford 的近亲，参数空间里存在大量意外好看的图案，适合按歌曲特征随机采样参数。",
+          "ref": "Paul Bourke (Peter de Jong Attractors)"
+        },
+        {
+          "name": "julia_set",
+          "kind": "escape_time_fractal",
+          "formula": "z[n+1] = z[n]^2 + c;  count = 逃逸所需迭代数",
+          "params": "c 的实/虚部、迭代上限、平滑着色参数",
+          "effect": "分形边界清晰锐利，c 随 t/律动在 Mandelbrot 边界附近移动会持续「变脸」；用 renormalized 迭代计数做平滑着色。",
+          "ref": "标准逃逸时间分形"
+        },
+        {
+          "name": "fbm_domain_warp",
+          "kind": "noise_field",
+          "formula": "f(p) = fbm(p);  p' = p + A*fbm(p + B*fbm(p + C*t))",
+          "params": "octaves、增益、频率、扭曲幅度 A/B/C",
+          "effect": "域扭曲分形布朗运动，产生有机流动纹理，是终端动画里「高级感」性价比最高的一个。",
+          "ref": "Inigo Quilez, Domain Warping (2002)"
+        },
+        {
+          "name": "gray_scott_reaction_diffusion",
+          "kind": "pde_stateful",
+          "formula": "du/dt = Du*laplacian(u) - u*v^2 + F*(1-u);  dv/dt = Dv*laplacian(v) + u*v^2 - (F+k)*v",
+          "params": "F(投喂率)、k(消亡率)、扩散系数",
+          "effect": "偏微分方程演化出有机的斑点/脉络/迷宫，状态式，需要保存上一帧浓度场。",
+          "ref": "Gray-Scott 反应扩散模型"
+        },
+        {
+          "name": "wave_interference",
+          "kind": "implicit_field",
+          "formula": "I(x,y,t) = sum_i A_i * sin(k_i * dist(p, s_i(t)) - omega_i*t + phi_i)",
+          "params": "波源位置/幅度/波数/角频率",
+          "effect": "多波源叠加的涟漪与驻波，频率和幅度可直接被 bass/beat 调制，响应最直观。",
+          "ref": "经典波动叠加"
+        },
+        {
+          "name": "metaballs_sdf",
+          "kind": "implicit_field",
+          "formula": "field(p) = sum_i r_i^2 / dist(p, c_i)^2;  shade 用阈值或 smooth-min",
+          "params": "球心轨迹、半径、平滑参数",
+          "effect": "会相互吸引融合的「液滴」，阈值边缘着辉光后科技感强；可与律动同步跳动。",
+          "ref": "经典 metaball 隐式场"
+        },
+        {
+          "name": "polar_harmonics_mandala",
+          "kind": "implicit_polar_field",
+          "formula": "r(theta,t) = sum_k a_k * cos(k*theta + phi_k*t)",
+          "params": "各阶谐波系数 a_k 与相位速度 phi_k",
+          "effect": "极坐标谐波叠加形成对称曼陀罗图案，随相位转动，适合慢歌的冥想式动画。",
+          "ref": "二维极坐标傅里叶合成"
+        },
+        {
+          "name": "ifs_chaos_game",
+          "kind": "point_iteration_trails",
+          "formula": "以概率 p_i 选取仿射变换 T_i，p' = T_i(p)",
+          "params": "仿射变换集与概率",
+          "effect": "迭代函数系统混沌游戏生成 Barnsley 蕨叶、Sierpinski 三角等自相似图案，逐点累积。",
+          "ref": "经典 IFS / Chaos Game"
+        },
+        {
+          "name": "curl_noise_flow_field",
+          "kind": "particle_stateful",
+          "formula": "v = (dψ/dy, -dψ/dx), ψ 为 fbm 噪声；p' = p + v*dt",
+          "params": "噪声频率、粒子数、寿命",
+          "effect": "散度为零的流场让粒子平流出丝滑轨迹，配合拖尾做「高级」流体感。",
+          "ref": "Bridson 2007 Curl-Noise"
+        }
+      ],
+      "selection_policy": "v1 落地 6 个最出彩且参数化友好的：superformula、clifford_attractor、julia_set、fbm_domain_warp、wave_interference、metaballs_sdf；gray_scott / ifs / curl_noise / polar_harmonics 作为第二批。"
+    },
+    "rust_macro_codegen": {
+      "conclusion": "高级数学函数与代码生成宏是同一个设计主线：动画即表达式，宏负责把这些表达式变成逐像素内核，并把昂贵的数学计算前移到构建期。",
+      "verified": "实测 rustc 1.94：const fn 中调用 f32::sin 报 E0015，浮点三角函数不是 const-stable，因此编译期查表不靠 const fn，而用 build.rs 或 proc-macro 宿主侧计算。",
+      "uses": [
+        "build.rs 在构建期用完整 std 数学生成 sin/cos/atan2/exp 等 LUT 与调色板插值表，写入 OUT_DIR/math_tables.rs，运行时零成本查表。",
+        "ascii_ramp!() 生成 const 字符斜坡与 glyph_for(v) 查表（查表索引用 const fn 完成）。",
+        "palette!() 生成 const 调色板与颜色插值 LUT。",
+        "animations!() 声明式注册宏：每个动画是一段数学表达式 + 参数说明，宏生成 Animation 枚举、分发表与 sample(x,y,t,audio) 逐像素内核。",
+        "逃逸时间分形用 const 泛型迭代上限 + 宏展开定次循环；吸引子/IFS 用宏生成点迭代状态更新函数。",
+        "可选 proc-macro DSL：把字符串数学表达式在编译期解析为 AST，宿主侧可直接算常数（sin/cos 可用），生成特化代码；v1 用 build.rs + macro_rules!，DSL 作为 P2 增强。"
+      ]
+    }
+  },
+  "architecture": {
+    "processes": [
+      {
+        "name": "rust_renderer",
+        "role": "主进程；crossterm 全屏渲染、函数动画计算、点阵封面、歌词底栏、NDJSON 消费；优雅退出恢复终端。",
+        "key_deps": "crossterm 0.29, anyhow 1.0.104, serde/serde_json, rayon 1.12, clap 4.6.7, noise 0.9.0, num-complex 0.4.6, fastrand 2.5.0；ratatui 0.30 可选。"
+      },
+      {
+        "name": "python_backend",
+        "role": "uv 环境；解析链接 -> pyncm 取封面/歌词/音频直链 -> opencv 生成封面点阵文件 -> miniaudio 流式播放与分析 -> 输出 NDJSON 事件。",
+        "key_deps": "numpy 2.x, opencv-python-headless 5.0, pillow 13, miniaudio 1.71, requests, vendored pyncm；librosa 1.0 可选。"
+      }
+    ],
+    "ipc_protocol": {
+      "format": "NDJSON，每行一个 JSON 对象",
+      "events": {
+        "meta": "标题/歌手/封面点阵元数据/时长",
+        "cover_ready": "封面点阵二进制文件路径 + cols/rows",
+        "audio_state": "playing/paused/ended/error",
+        "features": "t, rms, bass, mid, treble, flux, onset",
+        "lyric": "当前行索引、行内进度(0-1)、行文本"
+      }
+    },
+    "layout": {
+      "animation_area": "全屏函数动画层",
+      "cover_layer": "底层半透明/混合的 half-block 封面点阵",
+      "lyric_bar": "底部 1-3 行，高亮当前句，显示进度",
+      "meta_bar": "顶部 1 行，歌曲标题/歌手/时间"
+    },
+    "codegen_pipeline": {
+      "step1": "build.rs 从规格文件(animations.toml/palettes.toml)读取动画与调色板定义，用完整 std 数学在构建期生成 math_tables.rs（sin/cos/atan2/exp LUT）、调色板插值表、ASCII 斜坡变体与动画变体表，写入 OUT_DIR。",
+      "step2": "macro_rules! 宏（ascii_ramp!/palette!/animations!）基于 build.rs 生成的表，生成 Animation 枚举、分发表与 sample(x,y,t,audio) 内核；查表索引用 const fn。",
+      "step3": "proc-macro 数学 DSL（核心）：编译期把表达式解析为 AST，宿主侧对常数做求值与折叠，粗网格采样自动推导值域 min/max 并烘焙为常量，生成特化且展开的逐像素内核。",
+      "step4": "逃逸时间分形用 const 泛型迭代上限 + 宏展开定次循环与预计算 log 表；吸引子/IFS/流场由宏生成点迭代、仿射变换表与状态更新函数。",
+      "step5": "声明式参数绑定宏 bind!()：音频特征 -> 动画参数的映射、钳制与归一化由宏生成，替代手写 if/else。",
+      "step6": "事件 schema 宏：从一份 enum 定义自动派生 serde 反序列化、类型分发与 round-trip 测试夹具（事件用 #[serde(tag=\"type\")] 的既有 derive，再叠加生成 match 分发）。"
+    }
+  },
+  "decisions": [
+    {
+      "id": "D1",
+      "topic": "网易云数据源",
+      "decision": "vendor Code-MonkeyZhang/pyncm 1.8.1 快照到 py/vendor/pyncm，通过 uv 的 editable/git 方式安装。",
+      "rationale": "PyPI 与上游 GitHub 均已不可用；该快照本地实测可匿名获取封面/歌词/音频直链。",
+      "alternatives": "Binaryify/NeteaseCloudMusicApi（Node，需额外运行时，不选）；自行逆向 weapi/eapi（重复造轮子）。"
+    },
+    {
+      "id": "D2",
+      "topic": "Python 环境",
+      "decision": "uv 管理，固定 CPython 3.12；依赖 numpy、opencv-python-headless、miniaudio、requests，外加 vendored pyncm。",
+      "rationale": "3.12 生态轮子覆盖最全；opencv 用 headless 避免 Qt 依赖；miniaudio 避免 ffmpeg。",
+      "alternatives": "系统 3.14（opencv abi3 与 miniaudio 也有轮子，但 3.12 更稳）。"
+    },
+    {
+      "id": "D3",
+      "topic": "音频播放与解码",
+      "decision": "miniaudio stream_any 网络流解码 + PlaybackDevice 播放；分析与播放共享同一帧流。",
+      "rationale": "无需 ffmpeg；回调线程共享帧流从根上消除音画/歌词漂移。",
+      "alternatives": "ffmpeg 子进程解码（本机未装、进程管道复杂）；下载整曲再播（非流式，违背需求）。"
+    },
+    {
+      "id": "D4",
+      "topic": "封面点阵",
+      "decision": "opencv 读图并 area 缩放到 cols x (rows*2)，写二进制 RGB + 元数据；Rust 用 half-block + truecolor 渲染。",
+      "rationale": "每格两个彩色像素，高清且跨终端；Ghostty 下另提供 Kitty graphics 真高清可选模式。",
+      "alternatives": "braille 2x4（单色，适合灰度不选为主）；纯 ASCII 灰度（分辨率不足）。"
+    },
+    {
+      "id": "D5",
+      "topic": "动画表达",
+      "decision": "统一为 f(x,y,t,audio) 高级数学函数动画 + 图层合成；v1 落地 superformula / clifford-attractor / julia-set / fbm-domain-warp / wave-interference / metaballs-sdf 六个。",
+      "rationale": "高级数学函数（超公式、吸引子、逃逸时间分形、域扭曲、反应扩散、metaball 隐式场）视觉辨识度高、参数化强、逐像素独立可并行，且天然适合宏展开；blend 层叠加封面与律动参数。",
+      "alternatives": "预录视频帧（违反「非硬编码动画」）；逐动画手写渲染循环（不可扩展）。"
+    },
+    {
+      "id": "D6",
+      "topic": "Rust 宏",
+      "decision": "分层元编程：derive(serde/clap) 管样板、macro_rules!(ascii_ramp!/palette!/animations!/bind!) 管 LUT 与注册/映射、build.rs 管规格驱动的查表与变体生成、proc-macro 数学 DSL 做 AST 解析 + 编译期常数折叠 + 自动值域归一化，const 泛型管迭代上限展开。",
+      "rationale": "实测 const fn 不能算浮点 sin（E0015），把计算前移到 build.rs 与 proc-macro 宿主侧；编译期采样自动推导归一化常量，替代人工调参；新增动画与参数绑定均退化为声明式一行。",
+      "alternatives": "运行时构建 LUT（浪费启动时间）；手写每帧查表与参数映射（重复且易错）；完全靠 const fn 预计算（不可行）。"
+    },
+    {
+      "id": "D7",
+      "topic": "进程与 IPC",
+      "decision": "Rust 为主进程（拥有终端），spawn `uv run python backend.py` 作为后端；两者用 NDJSON（stdin/stdout）通信。",
+      "rationale": "Rust 控制终端生命周期与优雅恢复；Python 专注获取/解码/分析；NDJSON 便于流式增量。",
+      "alternatives": "Python 为主进程（终端控制更繁琐）；单进程（Rust 无网易云生态，Python 渲染终端性能差）。"
+    },
+    {
+      "id": "D8",
+      "topic": "同步时钟",
+      "decision": "以播放已解码帧数 frames_played/sample_rate 为权威时钟驱动歌词与律动。",
+      "rationale": "与音频硬件真实播放进度一致，不受渲染帧率抖动影响。",
+      "alternatives": "wall-clock 计时（长期漂移、暂停/缓冲后错位）。"
+    },
+    {
+      "id": "D9",
+      "topic": "库选型原则",
+      "decision": "每个功能点优先复用成熟开源库，仅保留「半块字符映射」「NDJSON 帧循环」「动画合成引擎」这类必需且极薄的适配/核心层自研；详细映射见 library_map。",
+      "rationale": "避免重复造轮子，聚焦本项目独有的「律动驱动 ASCII 动画」价值；库选择均基于版本、轮子覆盖与实时性要求。",
+      "alternatives": "全部自研（重复且易错，不选）；过度引入重型库（如实时回调里用 librosa，延迟不满足）。"
+    }
+  ],
+  "library_map": {
+    "principle": "优先复用成熟开源库；自研项仅限「半块字符映射」「NDJSON 行协议」「动画图层合成引擎」这类无法直接借用的薄适配/核心层，并参考 viuer/chafa 等成熟实现。",
+    "rust": [
+      {
+        "feature": "终端全屏/raw 模式/光标/truecolor/尺寸",
+        "library": "crossterm 0.29",
+        "role": "alternate screen、raw mode、隐藏光标、SetForegroundColor/SetBackgroundColor、terminal::size、事件读取",
+        "why": "避免手写 ANSI 序列与平台差异，crates.io 使用量最大、维护活跃。",
+        "note": "主选；不用 ratatui 也能满足核心渲染。"
+      },
+      {
+        "feature": "歌词/标题等 UI 面板",
+        "library": "ratatui 0.30（可选）",
+        "role": "Paragraph/Line 布局、换行、高亮样式",
+        "why": "歌词底栏如需滚动/自动换行，复用它比手写 widget 省事；核心全屏动画仍用自绘 buffer 以保持逐帧控制。",
+        "note": "P2 再引入，避免初期绑定布局框架。"
+      },
+      {
+        "feature": "终端图片点阵映射",
+        "library": "viuer 0.11 + chafa（参考/备选）",
+        "role": "half-block/braille/kitty 图像映射的成熟实现参考；viuer 可作为「纯封面显示」备选路径",
+        "why": "避免从零摸索字形与像素配比；因本项目需要把封面当图层与动画混合，核心采用自研薄适配层（约 50 行）。",
+        "note": "自研层为 reinvention_whitelist 项。"
+      },
+      {
+        "feature": "JSON 序列化/反序列化",
+        "library": "serde 1.0.229 + serde_json 1.0.154",
+        "role": "NDJSON 事件反序列化、配置读取",
+        "why": "事实标准，零成本派生。",
+        "note": ""
+      },
+      {
+        "feature": "命令行参数",
+        "library": "clap 4.6.7",
+        "role": "歌曲链接、动画选择、配置覆盖等 CLI",
+        "why": "derive 方式简洁，错误提示完善。",
+        "note": ""
+      },
+      {
+        "feature": "并行逐像素采样",
+        "library": "rayon 1.12",
+        "role": "动画网格并行求值",
+        "why": "work-stealing 线程池，一行 par_iter 提升帧率。",
+        "note": ""
+      },
+      {
+        "feature": "复数运算（Julia 等分形）",
+        "library": "num-complex 0.4.6",
+        "role": "逃逸时间分形复迭代",
+        "why": "避免手写 Complex 与溢出处理。",
+        "note": ""
+      },
+      {
+        "feature": "程序化噪声/FBM",
+        "library": "noise 0.9.0",
+        "role": "Perlin/OpenSimplex/Fbm，用于 fbm + 域扭曲",
+        "why": "成熟噪声实现，避免手写梯度噪声；若逐像素性能不足，再用 build.rs 值噪声 LUT 替换。",
+        "note": "备选：build.rs 生成的 value-noise LUT（保留为性能优化手段）。"
+      },
+      {
+        "feature": "随机数（吸引子/IFS/粒子）",
+        "library": "fastrand 2.5.0",
+        "role": "点迭代种子、IFS 概率选择、粒子抖动",
+        "why": "轻量、无 getrandom 链依赖，够用且快。",
+        "note": ""
+      },
+      {
+        "feature": "线程间消息队列",
+        "library": "crossbeam-channel 0.5.17（可选）",
+        "role": "后端解析线程到渲染线程的事件传递",
+        "why": "MPMC、无锁竞争开销，比 std::sync::mpsc 更灵活。",
+        "note": "单线程 BufReader 已够时可不引入。"
+      },
+      {
+        "feature": "未来：Rust 侧音频/图片（可选）",
+        "library": "cpal 0.18 / rodio 0.23 / image 0.25.10",
+        "role": "若后续把播放合并进 Rust 或由 Rust 直读封面",
+        "why": "本期主选 Python miniaudio/OpenCV，先记录为整合路径。",
+        "note": ""
+      }
+    ],
+    "python": [
+      {
+        "feature": "环境与依赖管理",
+        "library": "uv 0.12.23（固定 CPython 3.12）",
+        "role": "venv、锁定依赖、可复现安装",
+        "why": "用户指定；3.12 轮子覆盖最全。",
+        "note": ""
+      },
+      {
+        "feature": "网易云 API",
+        "library": "pyncm 1.8.1（Code-MonkeyZhang 快照，vendor）",
+        "role": "封面/歌词/音频直链/登录",
+        "why": "PyPI 与上游已下线，该快照本地实测可用；备选 Binaryify/NeteaseCloudMusicApi（Node，需额外运行时）。",
+        "note": "vendor 到 py/vendor/pyncm。"
+      },
+      {
+        "feature": "HTTP 请求",
+        "library": "requests 2.x（pyncm 依赖）",
+        "role": "API 调用与音频流式下载",
+        "why": "pyncm 内建依赖，stream=True 直接对接 miniaudio StreamableSource。",
+        "note": "httpx 0.28 仅作异步备选，不引入。"
+      },
+      {
+        "feature": "音频解码 + 播放",
+        "library": "miniaudio 1.71",
+        "role": "stream_any 网络流解码、PlaybackDevice 播放、stream_with_callbacks 同步分析",
+        "why": "纯 Python 轮子、内置 mp3/flac 解码、无需 ffmpeg；回调共享帧流保证零漂移。",
+        "note": "备选 sounddevice 0.5.6 / PyAudio（需 PortAudio 系统依赖）。"
+      },
+      {
+        "feature": "实时律动特征",
+        "library": "numpy 2.x",
+        "role": "FFT 分频带能量(bass/mid/treble)、RMS、spectral flux 起音检测",
+        "why": "FFT/向量化是 numpy 的核心能力，不重复造轮子；算法本身是标准流式 DSP。",
+        "note": "备选 aubio 0.4.9（实时 onset/tempo 专用，但 PyPI 无轮子，需 brew install aubio 后源码编译）。"
+      },
+      {
+        "feature": "离线节拍/BPM（可选）",
+        "library": "librosa 1.0.0",
+        "role": "beat.beat_track / onset 生成节拍网格，作为离线预处理模块",
+        "why": "最成熟的音乐分析库；依赖重（numba/scipy/scikit-learn），只在离线预分析里用，不放进音频回调。",
+        "note": "P2 可选模块 analysis/beatmap.py。"
+      },
+      {
+        "feature": "封面读取与缩放",
+        "library": "opencv-python-headless 5.0.0.93 + pillow 13.0.0",
+        "role": "OpenCV cv2.resize(INTER_AREA) 高质量下采样；Pillow 负责 EXIF 方向纠正与罕见格式兜底",
+        "why": "OpenCV 是用户指定且缩放质量好（abi3 轮子）；Pillow 补 EXIF/格式盲区。",
+        "note": "用 headless 版避免 Qt/GUI 依赖。"
+      },
+      {
+        "feature": "LRC 歌词解析",
+        "library": "pyncm.utils.lrcparser（随 vendor 复用）",
+        "role": "解析 LRC 时间戳/多时间戳行/元数据行",
+        "why": "pyncm 已内置成熟解析器，直接复用，不新写。",
+        "note": "备选 pylrc 0.1.2（功能更少）。"
+      }
+    ],
+    "reinvention_whitelist": [
+      "half-block/braille 单元格映射（约 50 行，因需与动画图层混合，viuer/chafa 不提供 buffer 级 API）",
+      "NDJSON 行协议与帧循环（解析交给 serde_json，本项目只定义事件 schema 与循环）",
+      "动画图层合成引擎（本项目的核心差异化价值，建立在 noise/num-complex/crossterm 之上）",
+      "律动参数映射（RMS/band/flux 用 numpy，映射逻辑是产品行为）"
+    ]
+  },
+  "metaprogramming": {
+    "goal": "把「运行时手写」尽可能前移到编译期：动画是表达式、库是生成器、常量在构建期算好、映射由宏推导。",
+    "audit": {
+      "weak_point_1": "原规划把 proc-macro 数学 DSL 定为 P2 可选，使其边缘化；应提升为核心主引擎（P0）。",
+      "weak_point_2": "动画值域归一化([0,1])依赖人工调参，无编译期自动求 min/max；应在宏展开期粗网格采样并烘焙归一化常量。",
+      "weak_point_3": "音频特征到动画参数的绑定是产品逻辑手写 if/else；应改为声明式宏 bind!() 生成映射/钳制/归一化代码。",
+      "weak_point_4": "build.rs 只生成三角函数表，未承担「从规格文件生成动画变体表/调色板/斜坡」的数据驱动代码生成。",
+      "weak_point_5": "逐像素内核未展开/特化，Julia 迭代未吃满 const 泛型与预计算 log 表；应在宏层生成特化内核。",
+      "weak_point_6": "NDJSON 事件只用 serde derive，缺少宏生成类型分发与 round-trip 测试。"
+    },
+    "layers": {
+      "L0_derive": "serde 的 Serialize/Deserialize、clap 的 Parser/ValueEnum，零手写样板。",
+      "L1_macro_rules": "ascii_ramp!/palette!/animations!/bind!()，生成 LUT、注册表、分发表与参数映射。",
+      "L2_build_script": "build.rs 从规格文件生成 math_tables.rs 与动画变体表，运行完整 std 数学与文件系统。",
+      "L3_proc_macro": "数学表达式 DSL：AST 解析、常数折叠、编译期粗网格采样自动归一化、生成特化展开内核；宿主侧可调用 sin/cos。",
+      "L4_const_generics": "逃逸时间分形迭代上限、仿射变换表长度、网格分块尺寸等用 const 泛型表达，配合宏展开定次循环。"
+    },
+    "optimizations": [
+      "把 T45 从 P2 提升为 P0，作为动画主引擎的组成部分。",
+      "新增 T46：bind!() 声明式参数绑定宏（音频特征 -> 动画参数）。",
+      "新增 T47：build.rs 规格驱动代码生成（animations.toml/palettes.toml -> 变体表/调色板/斜坡）。",
+      "T40 扩展为「构建期代码生成 + 三件套宏」，覆盖调色板/斜坡/动画变体表生成。",
+      "事件 schema 在 T50 中由宏生成类型分发与 round-trip 测试。"
+    ]
+  },
+  "risks": [
+    {
+      "risk": "网易云 API 上游变更或匿名权限收紧",
+      "mitigation": "vendor pyncm 便于就地修复；预留二维码/Cookie 登录；Binaryify Node API 作为备选数据源。"
+    },
+    {
+      "risk": "音频直链 20 分钟过期（expi=1200）",
+      "mitigation": "播放前与失败时重新调用 GetTrackAudioV1 刷新；流已建立后一般可继续播放。"
+    },
+    {
+      "risk": "海外/代理环境触发 460 Cheating",
+      "mitigation": "默认带 X-Real-IP 头，并允许配置代理或自定义 Header。"
+    },
+    {
+      "risk": "音频回调线程内分析过重导致爆音",
+      "mitigation": "分析限定在 1024-2048 帧小窗、固定缓冲区、numpy 无大分配；必要时降采样到 22050 分析。"
+    },
+    {
+      "risk": "部分终端字体缺 half-block/braille 字形",
+      "mitigation": "提供字符集回退（ASCII 灰度）与字体建议；Ghostty 默认字体已覆盖。"
+    },
+    {
+      "risk": "反应扩散/流场等状态式动画性能不足",
+      "mitigation": "标记 P2 可裁剪；降低模拟分辨率并上采样渲染；rayon 并行。"
+    }
+  ],
+  "delivered": {
+    "summary": "全部 73 个任务已实现并验证；所有主窗口、日志、资料弹窗和 PTY Shell 均支持鼠标移动/缩放，重叠窗口使用按 z-order 触发的 0.8 不透明度稳定毛玻璃合成。",
+    "verification": {
+      "rust_tests": "cargo test: 50 passed",
+      "rust_clippy": "cargo clippy --all-targets --all-features: passed",
+      "python_tests": "uv run python -m unittest discover -s tests -v: 12 passed",
+      "netease_e2e": "示例歌曲 3347119767 实测获取 512x512 封面、76 行歌词、流式音频与实时 features；Rust 子进程链路和终端恢复已验证。",
+      "hot_swap_async": "无 URL 启动后 bracketed-paste 实测可直接播放；播放中二次粘贴会切换 generation、终止旧后端的 uv+Python 进程组，只保留一个新后端。终端帧由独立 writer 线程异步写出，Python NDJSON 由 emitter 队列线程序列化。",
+      "cinematic_redesign": "默认切换为 cinematic：封面色板 + luma、16 段频谱、歌词变化冲击波、onset 粒子和三套场景运动。研究 trix-effects/drift/terminal_graphics/LEGACY-PIXY 本月版本并记录到 docs/ANIMATION_RESEARCH.md。",
+      "prewarm_prefetch": "播放时保持一个 idle 预热后端；多链接粘贴会预取下一首元数据/歌词/封面/音频 URL 到绝对路径缓存，并可在当前曲目结束后自动续播。",
+      "particle_cover": "OpenCV 在 512×512 工作面输出 83984 个粒子，较 320 方案约 4.19 倍；终端子点直接对齐采样封面 RGB/luma，动态粒子仍按 subset 控制性能。",
+      "generative_math": "build.rs 从 spectral_modes.toml 生成 16 阶二维谱模式，spectral_engine! 宏展开采样；Director 使用复多项式势共轭速度场，并以 BPM/8 的 32 分音符步长更新频谱状态。",
+      "brightness": "动画与封面粒子使用子像素级 90% 分位自动曝光；40×120 终端回放显示 ev 2.00–2.46，文字独立 WCAG 对比度；--stats 输出模式名、曝光和实时 BPM。",
+      "adaptive_hash": "默认 adaptive 对歌词/歌曲信息/BPM 做 SHA-256；实测 68 BPM 选中 harmonics，107 BPM 选中 metaballs，同一时间仅渲染一个数学模式。",
+      "subpixel_animation": "背景动画改为 2×4 盲文子像素采样；120×40 终端、目标 30fps 实测约 27fps，空间采样点由 4800 提升到 38400。",
+      "danmaku": "示例歌曲评论接口返回 40 条评论；终端回放状态为 dm 2/40，评论只在封面右侧轨道内连续横移，并进入预取缓存。",
+      "audio_scope": "紧凑 SPECTRUM 面板保存 24×16 频谱历史，以 braille 渲染 2D 热图，最大 42×8 格；终端回放显示连续频率/时间纹理。",
+      "visual_stability": "封面使用独立局部曝光/增益且限制最大亮度；背景边缘驱动稀疏化，满屏实心盲文显著减少；120×40 高分辨率回放稳定约 27fps。",
+      "initial_palette": "默认调色板改为 afterglow（#05070c/#111827/#0f766e/#67e8f9/#f6c177/#fff7e8），封面派生色与 fallback 按 70/30 混合；neon 主题仍可选。",
+      "stream_features": "Rust/Python 特征现包含 centroid/spread/flatness/rolloff/zcr/crest/stereo_width，并接入 adaptive 的 12 个数学模式。",
+      "japanese_lyrics": "已用日文歌曲实测请求与播放，并新增汉字/假名混排的双宽单元格、居中、长句面板内裁剪回归测试。",
+      "interaction_render": "鼠标左键可拖动 NOW PLAYING/COVER/LYRICS 三个浮动面板，r 重置；8x3 脏瓦片矩阵、单元格 diff、横向 run 与 --stats 已接入并有单元测试。",
+      "visual_glyphs": "基于 chafa 符号分类研究落地 ascii/blocks/quadrants/braille/mixed 五套 profile；动画使用 tone map、vignette、Bayer 抖动与 bloom，文字使用 sRGB/WCAG 对比度修正。",
+      "benchmark": "release 构建 160x48：18 个核心动画和 Adaptive 的 18 个数学模式均超过 60 fps；最低 FbmWarp 约 103 fps、Adaptive torus 约 485 fps，3D 模式约 4.5k–12.7k fps。",
+      "cover_alignment": "封面子点直接按归一化坐标采样 OpenCV RGB/luma，粒子仅叠加动态闪光；终端回放封面保持彩色细节且无实心块。",
+      "three_d_math": "新增 Lorenz、Möbius、sphrs 实球谐和 glam 透视波面；2D 模式保留，并继续使用 Bessel/Julia/Newton/Fourier 等函数。",
+      "macro_library_bridge": "math_kernel! 支持 bessel_j/y/i/k、erf/erfc、gamma/ln_gamma；proc-macro 编译期复用 puruspe，运行期调用 puruspe/sphrs/glam 包装层，并生成 3D 波面形变。",
+      "cover_clarity": "封面画幅改为按歌词上边界与 2:1 终端单元比例计算，取消 56 格硬上限；1200x1200 真实源图经 512 工作面和双线性/局部边缘采样后，默认以彩色盲文输出，hybrid 模式保留 500+ 真彩单元、64+ 前景色且无实心块退化。",
+      "cover_styles": "默认 cover_style=braille，盲文测试确保无半块泄漏；hybrid 与 halfblock 保持可选，CLI/TOML 均已接入。",
+      "qr_login": "实测 pyncm QR API 返回 URL，并生成 24 行半块二维码事件；python-qrcode 单测验证矩阵行宽一致。登录态持久化文件权限为 0600。",
+      "netease_library": "GetCurrentLoginStatus/GetUserPlaylists/GetPlaylistAllTracks 已接入独立 auth 子进程；未登录运行返回用户占位与空歌单，不崩溃。",
+      "playback_controls": "歌词面板扩展 PREV/PAUSE/NEXT 鼠标按钮，并支持 Space/b/n；ControlBus 单测验证 pause/resume JSON 分流与坏行忽略，控制经 backend stdin 到达 miniaudio，切歌沿用 generation 热切换。真实歌曲终端联调完成暂停/恢复与退出。",
+      "playlist_lifetime_fix": "定位并修复 miniaudio StreamableSource C 句柄生命周期竞态；4 首真实歌曲循环 fetch/decode/gc/source.close 全部通过，旧日志中的 from_handle garbage 与 PlaybackDevice AttributeError 不再出现。",
+      "spatial_animation": "自适应扩为 18 模式；2x4 field 含 depth 与宏生成 light，Lorenz/Möbius/球谐/波面/Hopf/Klein 使用深度加权连续线段。160x48 release 基准最低 torus 约 485fps，3D 模式约 4.5k-12.7kfps。",
+      "ui_rebalance": "默认封面比例 0.30、最大 72 格；高频区域新增 LOGS 面板，F3/Alt-L 开关，宽度和高度按终端自动收敛；封面、日志、频谱和歌词均可拖动/缩放。",
+      "embedded_shell": "portable-pty + vt100 内嵌 $SHELL；F4/Alt-S 开关，隐藏不杀进程；方向键、Ctrl 组合键、粘贴和 ANSI 色已映射。PTY 单测执行 printf 并从 vt100 屏幕读到输出。",
+      "generated_3d_light": "FieldSample.light 由 generated_orbital_light 宏根据 depth、视角和节拍生成；背景按该光照响应合成亮度，六个 3D 模式测试覆盖光照动态范围。",
+      "live_logs": "LogStore 以 300ms 增量读取 backend/auth/prefetch 日志，80 行环形缓冲、文件截断恢复和错误高亮均有实现/测试。",
+      "layout_system": "Tab 循环 balanced/gallery/instrument；鼠标右下角缩放拥有最高命中优先级；边框顶部/侧面分级、标题底色和移动吸附已落地。",
+      "window_resize": "Layout 加入 Shell panel，Library modal 增加窗口矩形与拖拽状态；NOW PLAYING/COVER/SPECTRUM/LOGS/LYRICS/LIBRARY/SHELL 全部支持右下角 ◢ 缩放。",
+      "glass_compositing": "Buffer::glass_rect 在重叠上层使用精确 0.8 背景插值、0.8 前景压制和确定性颗粒；单测验证结果不等于全不透明 tint。",
+      "layered_glass": "glass_for 按 Meta→Cover→Audio→Logs→Lyrics 的 z-order 检测交叠，仅上层触发 glass；Shell 逐 cell glass，Library modal 始终 glass。",
+      "file_length": "scripts/check_file_lengths.sh: all code files <= 600 lines"
+    },
+    "known_limitations": [
+      "Kitty graphics 真高清封面是可选增强，当前默认交付使用彩色 braille 点阵。",
+      "扫码成功后的真实账号歌单需要用户用自己的网易云 App 扫描二维码；自动化测试只能覆盖到二维码生成与未登录状态。",
+      "默认使用网易云 standard 音质；VIP/无损可通过扫码登录或 NETEASE_COOKIE 解锁。",
+      "真正的硬件播放要求系统存在可用音频输出设备；无设备时可用 --analyze-only 验证解码与分析链路。"
+    ]
+  },
+  "audit_findings": [
+    {
+      "id": "A101",
+      "category": "状态持久化",
+      "severity": "P0",
+      "issue": "playback/layout/animation 状态都写在 target/ 下，与构建产物混合；没有 schema 版本和迁移，cargo clean 会丢数据。",
+      "impact": "配置不稳定、重启偶发丢失，跨版本升级无兼容策略。",
+      "proposal": "迁移到 XDG/平台配置目录，所有快照带 version，损坏时保留备份并降级到默认值。"
+    },
+    {
+      "id": "A102",
+      "category": "音频播放",
+      "severity": "P0",
+      "issue": "seek 通过重新打开流并丢弃整段帧实现，长音频高延迟且浪费带宽；没有 gapless、crossfade、ReplayGain，gain/peak 字段闲置。",
+      "impact": "进度跳转体验与主流播放器差距明显；连续歌单仍有切换缝。",
+      "proposal": "优先 HTTP Range/解码器 seek，回退丢弃法；实现 prebuffer、响度归一、设备枚举与 null 设备回退。"
+    },
+    {
+      "id": "A103",
+      "category": "音乐库数据面",
+      "severity": "P0",
+      "issue": "搜索只返回歌曲，没有专辑/歌手/歌单/MV/电台分面；没有曲目详情、歌手页、专辑页、电台流和本地收藏。",
+      "impact": "音乐发现路径仍很窄，无法浏览完整媒体库。",
+      "proposal": "抽象 BrowseResult 统一承载 song/album/artist/playlist/mv/radio 类型，增加详情页和嵌套导航。"
+    },
+    {
+      "id": "A104",
+      "category": "缓存与隐私",
+      "severity": "P0",
+      "issue": "缓存 JSON 仍保存完整媒体 URL 和 token query；清理只在预取成功后触发；登录态无刷新、无账号状态。",
+      "impact": "缓存泄露会暴露短期媒体直链；缓存文件和凭据生命周期不完整。",
+      "proposal": "缓存 key/value 分离，token 出进程后只存最小必要字段；启动时清理；登录态检测、刷新与登出联动清缓存。"
+    },
+    {
+      "id": "A105",
+      "category": "动画生成",
+      "severity": "P1",
+      "issue": "权重/收藏按数组索引保存，模式列表变动即失效；crossfade 只混合强度，不混合深度和颜色；缺少情绪/genre/BPM 语义 profile。",
+      "impact": "生成选择与音乐语义脱节，切换仍偏硬。",
+      "proposal": "用稳定模式 id，增加能量/亮度/风格三元组，crossfade 覆盖 FieldSample 全字段，并提供 genre/BPM 分组。"
+    },
+    {
+      "id": "A106",
+      "category": "渲染与图形",
+      "severity": "P1",
+      "issue": "Kitty 图片每次位置/封面变化都重新 base64 编码整个 512 RGB；无缩略图缓存、超时和 ACK；scratch 只有全局一把锁。",
+      "impact": "图形切换可能卡顿；多场景运行时存在不必要串行。",
+      "proposal": "缓存已编码 payload，按 id 增量更新；为 writer 增加上限和健康检查；Scratch 池按线程复用。"
+    },
+    {
+      "id": "A107",
+      "category": "Shell 与窗口",
+      "severity": "P1",
+      "issue": "Shell 只支持一个会话，无滚动搜索、历史持久化、宿主到 Shell 粘贴、鼠标协议转发和多标签；窗口无自动碰撞/吸附、拖拽预览、任务条。",
+      "impact": "日常任务使用仍频繁切出，多窗口复杂布局不可靠。",
+      "proposal": "增加 shell 会话管理、OSC8/搜索/历史、窗口 snapping、拖拽预览和可恢复的最小化列表。"
+    },
+    {
+      "id": "A108",
+      "category": "可观测性与可访问性",
+      "severity": "P1",
+      "issue": "Rust 侧没有结构化 trace、崩溃 hook、指标导出；通知分类靠关键词；无本地化、高对比度和色盲安全色板。",
+      "impact": "问题难以远程定位，用户可及性不足。",
+      "proposal": "引入轻量 span/event，panic hook 落盘，导出稳定指标；错误码分类；locale/主题和对比度配置。"
+    },
+    {
+      "id": "A109",
+      "category": "跨平台与测试",
+      "severity": "P1",
+      "issue": "CI 只有 Ubuntu；缺少 macOS/Windows、覆盖率、模糊测试、协议 property test、PTY 黄金截图和网络故障注入。",
+      "impact": "平台回归主要靠本地验证，边界情况覆盖不足。",
+      "proposal": "矩阵 CI、fuzz 与 property test、ANSI/PTY golden、mock 网络失败，并为 macOS 产出 release artifact。"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T301",
+      "phase": 30,
+      "title": "状态目录与版本化快照",
+      "status": "done",
+      "priority": "P0",
+      "depends_on": [
+        "A101"
+      ],
+      "estimate": "1.5d",
+      "description": "把 playback/layout/animation 状态迁移到用户配置目录，加入 version、atomic write、损坏备份和默认值恢复。",
+      "acceptance": "cargo clean 不丢状态；旧文件解析失败时自动备份；schema 不兼容时可迁移。",
+      "completed_at": "2026-10-24",
+      "notes": "done: state_store.rs versioned envelope, compatible migration, corrupt backup, fsync/atomic replace, Windows MoveFileExW; tests added"
+    },
+    {
+      "id": "T302",
+      "phase": 30,
+      "title": "音频 seek、gapless 与响度",
+      "status": "done",
+      "priority": "P0",
+      "depends_on": [
+        "A102"
+      ],
+      "estimate": "2.5d",
+      "description": "优先解码器/HTTP Range seek；增加前一首预载、gapless 缓冲、ReplayGain/gain-peak 归一、输出设备枚举与 null 回退。",
+      "acceptance": "常见 mp3/flac seek 延迟明显下降；连续切歌无缝隙；无音频设备时可静默分析。",
+      "completed_at": "2026-10-24",
+      "notes": "done: HTTP Range/decode seek, EOF-safe source position, preloaded next-track backend and decoder, ReplayGain/peak, device selection, analyze-only fallback; live decode verified"
+    },
+    {
+      "id": "T303",
+      "phase": 30,
+      "title": "歌词搜索、滚动与偏好持久化",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A101",
+        "A102"
+      ],
+      "estimate": "1.5d",
+      "description": "持久化 offset、翻译/罗马音开关；加入歌词滚动浏览、全文搜索、字符内平滑进度和纯音乐提示。",
+      "acceptance": "offset 重启保留；长歌词可滚动和搜索；字符高亮随进度连续推进。",
+      "completed_at": "2026-10-24",
+      "notes": "done: persisted offset/translation/romaji, full timeline scroll/search, continuous segment highlighting, pure-instrumental state; tests added"
+    },
+    {
+      "id": "T304",
+      "phase": 31,
+      "title": "全类型音乐库浏览",
+      "status": "done",
+      "priority": "P0",
+      "depends_on": [
+        "A103"
+      ],
+      "estimate": "3d",
+      "description": "把 BrowseResult 扩展到歌曲/专辑/歌手/歌单/MV/电台，增加详情页、嵌套导航、相关推荐和用户收藏。",
+      "acceptance": "搜索可切换类型；专辑/歌手页可进入并播放；电台可流式播放；长列表分页一致。",
+      "completed_at": "2026-10-24",
+      "notes": "done: faceted song/album/artist/playlist/MV/radio library, details, related lists, nested navigation, favorites, paging; live search verified"
+    },
+    {
+      "id": "T305",
+      "phase": 31,
+      "title": "离线元数据与发现历史",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A104"
+      ],
+      "estimate": "2d",
+      "description": "本地缓存搜索结果、歌单索引、浏览历史和最近播放；网络失败时展示可用离线内容。",
+      "acceptance": "无网络仍能浏览最近歌单/搜索历史；元数据命中缓存且可清理。",
+      "completed_at": "2026-10-24",
+      "notes": "done: bounded offline search/browse/collection cache, discovery history, recent tracks, cached UI marker, clear-on-logout; failure injection tested"
+    },
+    {
+      "id": "T306",
+      "phase": 31,
+      "title": "凭据生命周期与缓存脱敏",
+      "status": "done",
+      "priority": "P0",
+      "depends_on": [
+        "A104"
+      ],
+      "estimate": "1.5d",
+      "description": "媒体 URL token 只存在播放进程内；持久缓存分离 metadata 与瞬时 URL；登录态检测、刷新、登出联动清理。",
+      "acceptance": "持久缓存不含 token query；启动和登出清理过期项；日志 redact 覆盖嵌套 JSON。",
+      "completed_at": "2026-10-24",
+      "notes": "done: transient URL scrubbing, invalid-session detection/cleanup, logout cache purge, nested JSON/URL redaction; tests added"
+    },
+    {
+      "id": "T307",
+      "phase": 32,
+      "title": "动画语义 profile 与全字段过渡",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A105"
+      ],
+      "estimate": "2d",
+      "description": "用稳定 mode id 和能量/亮度/风格元组选场；crossfade 覆盖 intensity/depth/light；提供 genre/BPM 分组和低端自动裁剪。",
+      "acceptance": "偏好跨模式重排仍有效；过渡颜色/深度平滑；低端机禁用高成本模式。",
+      "completed_at": "2026-10-24",
+      "notes": "done: stable string mode IDs, BPM/energy/motion-family profiles, low-end pruning, intensity/depth/light crossfade; tests added"
+    },
+    {
+      "id": "T308",
+      "phase": 32,
+      "title": "渲染资源池与帧预算",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A106"
+      ],
+      "estimate": "1.5d",
+      "description": "Scratch 按工作线程复用；为图形和终端 writer 增加帧预算、背压和健康检查；记录抽样/编码成本。",
+      "acceptance": "长时间运行分配次数稳定；写入背压不丢帧；性能指标可导出。",
+      "completed_at": "2026-10-24",
+      "notes": "done: thread-local scratch reuse, bounded terminal writer, adaptive frame budget, sample/encode/write metrics; interactive stats verified"
+    },
+    {
+      "id": "T309",
+      "phase": 32,
+      "title": "Kitty 图片生命周期优化",
+      "status": "done",
+      "priority": "P2",
+      "depends_on": [
+        "A106"
+      ],
+      "estimate": "1d",
+      "description": "缓存编码 payload，按 cover id/尺寸增量更新；增加超时、ACK 和失败自动回退。",
+      "acceptance": "拖动面板不再每次重编码 512 RGB；传输失败自动切回 braille。",
+      "completed_at": "2026-10-24",
+      "notes": "done: cached Kitty payload, place-existing moves, opt-in ACK retry/timeout and braille fallback; tests added"
+    },
+    {
+      "id": "T310",
+      "phase": 33,
+      "title": "Shell 多会话与历史",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A107"
+      ],
+      "estimate": "2d",
+      "description": "支持多个 shell 会话/标签、滚动搜索、持久化历史、宿主到 Shell 粘贴、鼠标协议与 OSC8 链接。",
+      "acceptance": "可并开多个会话并保留历史；Scrollback 可搜索；双向剪贴板可用。",
+      "completed_at": "2026-10-24",
+      "notes": "done: multi-PTY tabs, scrollback search, persisted history, host paste, mouse forwarding, OSC52 selection and OSC8 capture/open; tests added"
+    },
+    {
+      "id": "T311",
+      "phase": 33,
+      "title": "窗口对齐与拖拽预览",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A107"
+      ],
+      "estimate": "1.5d",
+      "description": "加入 snapping、碰撞避让、拖拽预览、最小化列表和更多布局预设；窗口状态带版本。",
+      "acceptance": "拖拽/缩放自动对齐且不重叠；可恢复任意最小化窗口；预设切换保留可恢复状态。",
+      "completed_at": "2026-10-24",
+      "notes": "done: edge snapping, partial collision avoidance, drag preview, preserved deliberate stacking/glass, arbitrary minimize restore, versioned snapshots; tests added"
+    },
+    {
+      "id": "T312",
+      "phase": 34,
+      "title": "结构化观测与错误模型",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A108"
+      ],
+      "estimate": "1.5d",
+      "description": "Rust 增加轻量 span/event、panic hook、指标快照；错误改为 code/scope/retry 模型，通知历史落盘。",
+      "acceptance": "崩溃有恢复日志；错误可分类重试；指标可由 --stats 输出稳定字段。",
+      "completed_at": "2026-10-24",
+      "notes": "done: code/scope/retryable error model, persisted notifications, panic crash log, stable --stats JSON metrics; tests added"
+    },
+    {
+      "id": "T313",
+      "phase": 34,
+      "title": "本地化与可访问性",
+      "status": "done",
+      "priority": "P2",
+      "depends_on": [
+        "A108"
+      ],
+      "estimate": "1.5d",
+      "description": "增加 locale 消息表、高对比度和色盲安全色板、热键配置与运行时配置重载。",
+      "acceptance": "可切换语言；对比度配置生效；修改配置后可安全重载。",
+      "completed_at": "2026-10-24",
+      "notes": "done: zh/en/ja titles, high-contrast and CVD palettes, configurable hotkeys, safe runtime reload; config tests added"
+    },
+    {
+      "id": "T314",
+      "phase": 34,
+      "title": "协议 fuzz 与 property test",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A109"
+      ],
+      "estimate": "1d",
+      "description": "为 NDJSON、PCM 帧、LRC/YRC、ANSI 和 shell 输入增加 fuzz/property test，避免 panic 和越界。",
+      "acceptance": "畸形输入只报错不崩溃；关键 parser 有往返性质。",
+      "completed_at": "2026-10-24",
+      "notes": "done: proptest NDJSON/PCM/key fuzzing and random multilingual lyric properties; all suites pass"
+    },
+    {
+      "id": "T315",
+      "phase": 34,
+      "title": "多平台 CI 与发布",
+      "status": "done",
+      "priority": "P1",
+      "depends_on": [
+        "A109"
+      ],
+      "estimate": "2d",
+      "description": "CI 扩展 macOS/Windows；增加覆盖率、PTY/ANSI golden、网络故障注入，并产出各平台 artifact。",
+      "acceptance": "三平台跑测试；关键渲染有黄金截图；发布物自动上传。",
+      "completed_at": "2026-10-24",
+      "notes": "done: Ubuntu/macOS/Windows Rust and Python CI matrix, coverage LCOV, audits, golden/PTY coverage and per-OS artifacts; local release gate passed"
+    }
+  ],
+  "milestones": {
+    "M30_状态与音频": [
+      "T301",
+      "T302",
+      "T303"
+    ],
+    "M31_音乐库与隐私": [
+      "T304",
+      "T305",
+      "T306"
+    ],
+    "M32_动画与图形": [
+      "T307",
+      "T308",
+      "T309"
+    ],
+    "M33_Shell与窗口": [
+      "T310",
+      "T311"
+    ],
+    "M34_观测与发布": [
+      "T312",
+      "T313",
+      "T314",
+      "T315"
+    ]
+  },
+  "completion": {
+    "completed_at": "2026-10-24",
+    "tasks_done": 15,
+    "tasks_total": 15,
+    "source_limit_lines": 600,
+    "docs": [
+      "README.md",
+      "docs/RELEASE_READINESS.md",
+      "docs/ANIMATION_RESEARCH.md",
+      "docs/THIRD_PARTY.md"
+    ],
+    "verification": {
+        "rust_tests": "100 automated tests",
+        "python_tests": "33 automated tests",
+      "commands": [
+        "cargo fmt --all -- --check",
+        "cargo test --all-targets --all-features",
+        "cargo clippy --all-targets --all-features -- -D warnings",
+        "cargo build --release",
+        "cargo audit",
+        "./scripts/check_file_lengths.sh",
+        "cd py && uv run python -m compileall -q backend",
+        "cd py && uv run python -m unittest discover -s tests -v",
+        "cd py && uv run --with pip-audit pip-audit"
+      ],
+      "real_netease_track": "3347119767",
+      "real_netease_evidence": "512x512 cover, 83984 particles, 76 timed lyric lines, Japanese translation/romaji, comments, live BPM/spectrum features",
+        "interactive_demo": "80x24 PTY demo rendered, quit cleanly, restored terminal, emitted schema-1 metrics"
+    }
+  }
+}

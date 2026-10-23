@@ -1,0 +1,107 @@
+[[variant]]
+name = "adaptive"
+kernel = "adaptive"
+palette = "aurora"
+weight = 1.0
+
+[[variant]]
+name = "cinematic"
+kernel = "cinematic"
+palette = "aurora"
+weight = 1.0
+
+[[variant]]
+name = "prism"
+kernel = "prism"
+palette = "aurora"
+weight = 1.0
+
+[[variant]]
+name = "orbital"
+kernel = "orbital"
+palette = "neon"
+weight = 1.0
+
+[[variant]]
+name = "ink"
+kernel = "ink"
+palette = "ocean"
+weight = 1.0
+
+[[variant]]
+name = "bloom"
+kernel = "bloom"
+palette = "candy"
+weight = 1.0
+
+[[variant]]
+name = "plasma"
+kernel = "plasma"
+palette = "neon"
+weight = 1.0
+
+[[variant]]
+name = "fbm_warp"
+kernel = "fbm_warp"
+palette = "aurora"
+weight = 1.0
+
+[[variant]]
+name = "waves"
+kernel = "waves"
+palette = "ocean"
+weight = 1.0
+
+[[variant]]
+name = "julia"
+kernel = "julia"
+palette = "fire"
+weight = 1.0
+
+[[variant]]
+name = "superformula"
+kernel = "superformula"
+palette = "candy"
+weight = 1.0
+
+[[variant]]
+name = "clifford"
+kernel = "clifford"
+palette = "aurora"
+weight = 1.0
+
+[[variant]]
+name = "metaballs"
+kernel = "metaballs"
+palette = "neon"
+weight = 1.0
+
+[[variant]]
+name = "mandala"
+kernel = "mandala"
+palette = "candy"
+weight = 1.0
+
+[[variant]]
+name = "ifs"
+kernel = "ifs"
+palette = "fire"
+weight = 1.0
+
+[[variant]]
+name = "gray_scott"
+kernel = "gray_scott"
+palette = "ocean"
+weight = 1.0
+
+[[variant]]
+name = "flow_field"
+kernel = "flow_field"
+palette = "aurora"
+weight = 1.0
+
+[[variant]]
+name = "dsl_plasma"
+kernel = "dsl_plasma"
+palette = "neon"
+weight = 1.0
